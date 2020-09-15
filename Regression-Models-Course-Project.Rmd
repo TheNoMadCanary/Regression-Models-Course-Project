@@ -1,0 +1,157 @@
+---
+title: "Prediction Assignment Writeup"
+author: "AP"
+date: "9/14/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: [Link](http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset).
+
+
+## Get and clean data
+```{r}
+library(caret);library(kernlab);set.seed(1111);
+testing = read.csv("pml-testing.csv", header = TRUE,na.strings=c("NA","#DIV/0!",""))
+training = read.csv("pml-training.csv", header = TRUE,na.strings=c("NA","#DIV/0!",""))
+```
+
+Remove variables with near zero variance and non predict variables
+
+```{r}
+training <-training[,colSums(is.na(training)) == 0]
+testing  <-testing[,colSums(is.na(testing)) == 0]
+training <-training[,-c(1:7)]
+testing  <-testing[,-c(1:7)]
+```
+```{r}
+# sapply(training, class)
+library(corrplot)
+corr_matrix <- cor(training[1:52])
+corrplot(corr_matrix, order = "FPC", method = "circle", type = "lower",
+         tl.cex = 0.6, tl.col = rgb(0, 0, 0))
+```
+
+No near Zero variance parameters
+
+```{r eval=FALSE}
+nearZeroVar(training,saveMetric=TRUE)
+```
+
+```{r}
+# The dimension of the two input databases
+# head(training)
+dim(training)
+dim(testing)
+```
+The dataframes are of dimensions:
+* training - data frame with 160 observations on 19622 variables.
+* test     - data frame with 160 observations on 20 variables.
+
+## Cross validation
+
+Split the data into two sequences 75% for training and 25% for testing
+
+```{r}
+set.seed(345)
+trainingClasse <- createDataPartition(y=training$classe, p=0.75, list=FALSE)
+trainingA <- training[trainingClasse,]
+testingA <- training[-trainingClasse,]  
+```
+
+## METHOD 1 - Decision Tree
+```{r}
+library(rpart); library(RColorBrewer);library(rpart.plot);
+fit <- rpart(classe ~ ., data=trainingA, method="class")
+rpart.plot(fit)
+```
+
+Use model to predict class in testing set
+
+```{r}
+predictRpart <- predict(fit, testingA, type = "class")
+confusionMatrix(predictRpart, testingA$classe)
+```
+Success Percentage on the test sequence
+
+```{r}
+sum(predictRpart == testingA$classe)/length(predictRpart)*100
+```
+
+## METHOD 2 - RANDOM FOREST
+```{r}
+library(randomForest)
+fitRf <- randomForest(classe ~ ., data=trainingA, method="class")
+```
+Use model to predict class in testing set
+```{r}
+predictRandFors <- predict(fitRf, testingA, type = "class")
+confusionMatrix(predictRandFors, testingA$classe)
+```
+Success Percentage on the test sequence
+
+```{r}
+sum(predictRandFors == testingA$classe)/length(predictRandFors)*100
+```
+
+
+
+## METHOD 3 - Linear Discriminant Analysis
+
+LDA is a classification method that finds a linear combination of data attributes that best separate the data into classes.
+
+```{r}
+library(MASS)
+lm1 <- lda(classe ~ . , data=trainingA)
+```
+Use model to predict class in testing set
+```{r}
+pred <- predict(lm1, testingA[,1:52])$class
+confusionMatrix(pred, testingA$classe)
+```
+Success Percentage on the test sequence
+
+```{r}
+sum(pred == testingA$classe)/length(pred)*100
+```
+
+
+## METHOD 4 - Generalized Boosted Model (GBM)
+```{r}
+library(gbm)
+set.seed(345)
+gbmCtrl <- trainControl(method = "repeatedcv", number = 5, repeats = 2)
+fit  <- train(classe ~ ., data = trainingA, method = "gbm", trControl = gbmCtrl, verbose = FALSE)
+fit$finalModel
+```
+Use model to predict class in testing set
+```{r}
+predictGbm <- predict(fit, testingA)
+confusionMatrix(predictGbm, testingA$classe)
+```
+
+Success Percentage on the test sequence
+
+```{r}
+sum(predictGbm == testingA$classe)/length(predictGbm)*100
+```
+
+
+## Best Predictive Model to the Test Data
+Summary of all predictions performance
+
+* METHOD 1 - Decision Tree -                    69.41272%
+* METHOD 2 - RANDOM FOREST -                    99.61256%
+* METHOD 3 - Linear Discriminant Analysis -     70.47308%
+* METHOD 4 - Generalized Boosted Model (GBM) -  95.86052%
+
+Prediction of the test sequence according tho the random forest method.
+```{r}
+predict(fitRf,testing)
+```
+
